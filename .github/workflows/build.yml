@@ -1,4 +1,4 @@
-name: Build PS5 TV Launcher APK
+name: Build Android APK
 
 on:
   push:
@@ -13,9 +13,16 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Unzip Project
+      - name: Find and Unzip Project
         run: |
-          unzip -q Launcherx-main.zip -d extracted_project
+          ZIP_FILE=$(find . -maxdepth 1 -name "*.zip" | head -n 1)
+          if [ -n "$ZIP_FILE" ]; then
+            echo "Found zip file: $ZIP_FILE"
+            unzip -q "$ZIP_FILE" -d extracted_project
+          else
+            echo "ERROR: No ZIP file found!"
+            exit 1
+          fi
 
       - name: Set up Java
         uses: actions/setup-java@v4
@@ -23,34 +30,29 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Auto-Generate Gradle Wrapper
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v3
+
+      - name: Make gradlew executable
         run: |
-          BUILD_FILE=$(find extracted_project -name "build.gradle" | head -n 1)
-          if [ -n "$BUILD_FILE" ]; then
-            DIR=$(dirname "$BUILD_FILE")
-            echo "Found build config in $DIR, generating gradlew..."
-            cd "$DIR"
-            gradle wrapper --gradle-version 8.0
-            cd -
+          GRADLEW_PATH=$(find extracted_project -name gradlew | head -n 1)
+          if [ -n "$GRADLEW_PATH" ]; then
+            chmod +x "$GRADLEW_PATH"
           else
-            echo "No build.gradle found!"
+            echo "ERROR: Gradlew not found inside the ZIP! The ZIP is still missing Android files."
+            exit 1
           fi
 
       - name: Build APK
         run: |
           GRADLEW_PATH=$(find extracted_project -name gradlew | head -n 1)
-          if [ -n "$GRADLEW_PATH" ]; then
-            chmod +x "$GRADLEW_PATH"
-            PROJECT_DIR=$(dirname "$GRADLEW_PATH")
-            cd "$PROJECT_DIR"
-            ./gradlew assembleDebug --stacktrace
-          else
-            echo "ERROR: gradlew could not be generated."
-            exit 1
-          fi
+          PROJECT_DIR=$(dirname "$GRADLEW_PATH")
+          cd "$PROJECT_DIR"
+          ./gradlew assembleDebug --stacktrace
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: app-debug.apk
           path: /**/build/outputs/apk/debug/*.apk
+          
