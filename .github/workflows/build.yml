@@ -23,25 +23,31 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v3
-
-      - name: Make gradlew executable
+      - name: Auto-Generate Gradle Wrapper
         run: |
-          GRADLEW_PATH=$(find extracted_project -name gradlew | head -n 1)
-          if [ -n "$GRADLEW_PATH" ]; then
-            chmod +x "$GRADLEW_PATH"
+          BUILD_FILE=$(find extracted_project -name "build.gradle" | head -n 1)
+          if [ -n "$BUILD_FILE" ]; then
+            DIR=$(dirname "$BUILD_FILE")
+            echo "Found build config in $DIR, generating gradlew..."
+            cd "$DIR"
+            gradle wrapper --gradle-version 8.0
+            cd -
           else
-            echo "Gradlew not found inside ZIP!"
-            exit 1
+            echo "No build.gradle found!"
           fi
 
       - name: Build APK
         run: |
           GRADLEW_PATH=$(find extracted_project -name gradlew | head -n 1)
-          PROJECT_DIR=$(dirname "$GRADLEW_PATH")
-          cd "$PROJECT_DIR"
-          ./gradlew assembleDebug --stacktrace
+          if [ -n "$GRADLEW_PATH" ]; then
+            chmod +x "$GRADLEW_PATH"
+            PROJECT_DIR=$(dirname "$GRADLEW_PATH")
+            cd "$PROJECT_DIR"
+            ./gradlew assembleDebug --stacktrace
+          else
+            echo "ERROR: gradlew could not be generated."
+            exit 1
+          fi
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
