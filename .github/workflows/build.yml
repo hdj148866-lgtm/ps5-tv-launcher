@@ -2,6 +2,10 @@ name: Build PS5 TV Launcher APK
 
 on:
   workflow_dispatch:
+  push:
+    paths:
+      - '*.zip'
+      - '.github/workflows/build.yml'
 
 permissions:
   contents: read
@@ -14,38 +18,56 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Find and extract ZIP
+      - name: Find and extract project ZIP
         run: |
-          sudo apt-get update
-          sudo apt-get install -y unzip
-          ZIP=$(find . -maxdepth 2 -type f -iname "*.zip" | head -n 1)
+          ZIP=$(find . -maxdepth 1 -type f -iname "*.zip" | head -n 1)
           if [ -z "$ZIP" ]; then
-            echo "ERROR: ZIP file not found"
+            echo "ERROR: No ZIP found in repository root"
             exit 1
           fi
           mkdir project
           unzip -q "$ZIP" -d project
+          echo "Extracted project files:"
           find project -maxdepth 3 -type f | head -100
 
-      - name: Check Android project
+      - name: Locate Android Gradle project
+        id: locate
         run: |
-          if ! find project -name gradlew -type f | grep -q .; then
-            echo "ERROR: Android Gradle project not found"
+          GRADLEW=$(find project -type f -name gradlew | head -n 1)
+          if [ -z "$GRADLEW" ]; then
+            echo "ERROR: No gradlew found. ZIP may not contain a build-ready Android project."
             exit 1
           fi
+          echo "dir=$(dirname "$GRADLEW")" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
 
       - name: Build APK
-        working-directory: project
+        working-directory: ${{ steps.locate.outputs.dir }}
         run: |
-          chmod +x "$(find . -name gradlew -type f | head -n 1)"
-          GRADLEW=$(find . -name gradlew -type f | head -n 1)
-          cd "$(dirname "$GRADLEW")"
+          chmod +x gradlew
           ./gradlew assembleDebug
 
-      - name: Upload APK
+      - name: Package APK into ZIP
+        if: success()
+        run: |
+          mkdir -p output
+          find project -type f -path "*/build/outputs/apk/*/*.apk" -exec cp {} output/ \;
+          if [ -z "$(find output -name '*.apk' -print -quit)" ]; then
+            echo "ERROR: APK was not generated"
+            exit 1
+          fi
+          cd output
+          zip PS5-TV-Launcher-APK.zip *.apk
+
+      - name: Upload APK ZIP
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: PS5-TV-Launcher-APK
-          path: project/**/build/outputs/apk/debug/*.apk
-          
+          name: PS5-TV-Launcher-APK-ZIP
+          path: output/PS5-TV-Launcher-APK.zip
